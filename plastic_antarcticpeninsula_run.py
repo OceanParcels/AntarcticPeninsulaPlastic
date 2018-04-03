@@ -50,7 +50,7 @@ def run_hycom_particles(lons, lats, locs, rundays, files):
     pset = ParticleSet.from_list(fieldset=fset, pclass=JITParticle, lon=np.tile(lons, [nperloc]),
                                  lat=np.tile(lats, [nperloc]))
 
-    ofile = pset.ParticleFile(name='antarcticplastic_1yr_%02d.nc' % locs[0], outputdt=delta(days=1))
+    ofile = pset.ParticleFile(name='antarcticplastic_5yr_%02d.nc' % locs[0], outputdt=delta(days=1))
 
     kernels = pset.Kernel(AdvectionRK4) + BrownianMotion2D + BoundaryVels + WrapLon
     pset.execute(kernels, runtime=delta(days=rundays), dt=-delta(minutes=5),
@@ -71,14 +71,15 @@ if __name__ == "__main__":
     if args.loc > 0:
         to_run = [i for i, lc in enumerate(locs) if lc == args.loc]
     else:
-        to_run = range(1, 13)
+        to_run = range(0, 12)
 
     # ddir = '/Volumes/data01/HYCOMdata/GLBa0.08_expt90_surf/hycom_GLBu0.08_912_'
     ddir = '/Users/erik/Desktop/HycomAntarctic/hycom_GLBu0.08_912_'
     allfiles = sorted(glob(ddir + "201*00_t000.nc"))
-    rundays = 365
+    rundays = 365 * 5
+    dt = 5
 
     for i in to_run:
         ifiles = [j for j, s in enumerate(allfiles) if "201702%02d" % days[i] in s]
-        files = allfiles[ifiles[0]-rundays-3:ifiles[0]]
+        files = allfiles[ifiles[0] - rundays - 5:ifiles[0]:dt]
         run_hycom_particles([lons[i]], [lats[i]], [locs[i]], rundays, files)
