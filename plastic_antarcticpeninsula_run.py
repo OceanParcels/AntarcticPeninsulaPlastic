@@ -77,9 +77,8 @@ if __name__ == "__main__":
     ddir = '/Users/erik/Desktop/HycomAntarctic/hycom_GLBu0.08_912_'
     allfiles = sorted(glob(ddir + "201*00_t000.nc"))
     rundays = 365 * 5
-    dt = 5
 
     for i in to_run:
         ifiles = [j for j, s in enumerate(allfiles) if "201702%02d" % days[i] in s]
-        files = allfiles[ifiles[0] - rundays - 5:ifiles[0]:dt]
+        files = allfiles[ifiles[0] - rundays - 5:ifiles[0]]
         run_hycom_particles([lons[i]], [lats[i]], [locs[i]], rundays, files)
