@@ -42,7 +42,7 @@ def OutOfBounds(particle, fieldset, time, dt):
 def run_hycom_particles(lons, lats, locs, rundays, files):
     print(locs)
     fset = set_hycom_grid(files)
-    size2D = fset.U.data.shape[-2:]
+    size2D = (fset.U.grid.ydim, fset.U.grid.xdim)
     fset.add_field(Field('Kh_zonal', data=10*np.ones(size2D), lon=fset.U.grid.lon, lat=fset.U.grid.lat, mesh='spherical', allow_time_extrapolation=True))
     fset.add_field(Field('Kh_meridional', data=10*np.ones(size2D), lon=fset.U.grid.lon, lat=fset.U.grid.lat, mesh='spherical', allow_time_extrapolation=True))
 
