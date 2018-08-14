@@ -5,59 +5,34 @@ from glob import glob
 import numpy as np
 
 
-def set_hycom_grid(files):
-    filenames = {'U': files, 'V': files}
-    variables = {'U': 'u', 'V': 'v'}
+def set_fields(hycomfiles, stokesfiles):
     dimensions = {'lat': 'Latitude', 'lon': 'Longitude', 'time': 'MT', 'depth': 'Depth'}
-    indices = {'lat': range(1, 1500), 'depth': [0]}
-    for v in ['MaskUvel', 'MaskVvel']:
-        filenames[v] = "/Users/erik/Codes/ParcelsRuns/Hydrodynamics_AuxiliaryFiles/Hycom/boundary_velocities.nc"
-        variables[v] = v
+    bvelfile = '/Users/erik/Codes/ParcelsRuns/Hydrodynamics_AuxiliaryFiles/Hycom/boundary_velocities.nc'
+    MaskUvel = Field.from_netcdf(bvelfile, 'MaskUvel', dimensions)
+    MaskVvel = Field.from_netcdf(bvelfile, 'MaskVvel', dimensions)
 
-    fset = FieldSet.from_netcdf(filenames, variables, dimensions, indices=indices)
-    fset.add_periodic_halo(zonal=True, halosize=10)
-    fset.MaskUvel.units = fset.U.units
-    fset.MaskVvel.units = fset.V.units
-    return fset
-
-
-def set_ww3_grid(stokesfiles, fset):
+    uhycom = Field.from_netcdf(hycomfiles, 'u', dimensions, fieldtype='U')
+    vhycom = Field.from_netcdf(hycomfiles, 'v', dimensions, fieldtype='V', grid=uhycom.grid, timeFiles=uhycom.timeFiles)
 
     dimensions = {'lat': 'latitude', 'lon': 'longitude', 'time': 'time'}
-    uuss = Field.from_netcdf(stokesfiles, 'uuss', dimensions)
-    vuss = Field.from_netcdf(stokesfiles, 'vuss', dimensions)
-    uuss.add_periodic_halo(zonal=True, meridional=False, halosize=3)
-    vuss.add_periodic_halo(zonal=True, meridional=False, halosize=3)
-    uuss.units = fset.U.units
-    vuss.units = fset.V.units
-    return uuss, vuss
+    uuss = Field.from_netcdf(stokesfiles, 'uuss', dimensions, fieldtype='U')
+    vuss = Field.from_netcdf(stokesfiles, 'vuss', dimensions, fieldtype='V', grid=uuss.grid, timeFiles=uuss.timeFiles)
+
+    fieldset = FieldSet(U=[uhycom, uuss], V=[vhycom, vuss])
+    fieldset.add_field(MaskUvel)
+    fieldset.add_field(MaskVvel)
+    fieldset.MaskUvel.units = fieldset.U[0].units
+    fieldset.MaskVvel.units = fieldset.V[0].units
+
+    fieldset.add_periodic_halo(zonal=True, meridional=False, halosize=5)
+    return fieldset
 
 
 def WrapLon(particle, fieldset, time, dt):
-    if particle.lon > fieldset.halo_east:
+    if particle.lon > 360.:
         particle.lon = particle.lon - 360.
-    if particle.lon < fieldset.halo_west:
+    if particle.lon < 0.:
         particle.lon = particle.lon + 360.
-
-
-def AdvectionRK4_stokes(particle, fieldset, time, dt):
-    u1 = fieldset.U[time, particle.lon, particle.lat, particle.depth] + fieldset.uuss[time, particle.lon, particle.lat, particle.depth]
-    v1 = fieldset.V[time, particle.lon, particle.lat, particle.depth] + fieldset.vuss[time, particle.lon, particle.lat, particle.depth]
-
-    lon1, lat1 = (particle.lon + u1 * .5 * dt, particle.lat + v1 * .5 * dt)
-    u2 = fieldset.U[time + .5 * dt, lon1, lat1, particle.depth] + fieldset.uuss[time + .5 * dt, lon1, lat1, particle.depth]
-    v2 = fieldset.V[time + .5 * dt, lon1, lat1, particle.depth] + fieldset.vuss[time + .5 * dt, lon1, lat1, particle.depth]
-
-    lon2, lat2 = (particle.lon + u2 * .5 * dt, particle.lat + v2 * .5 * dt)
-    u3 = fieldset.U[time + .5 * dt, lon2, lat2, particle.depth] + fieldset.uuss[time + .5 * dt, lon2, lat2, particle.depth]
-    v3 = fieldset.V[time + .5 * dt, lon2, lat2, particle.depth] + fieldset.vuss[time + .5 * dt, lon2, lat2, particle.depth]
-
-    lon3, lat3 = (particle.lon + u3 * dt, particle.lat + v3 * dt)
-    u4 = fieldset.U[time + dt, lon3, lat3, particle.depth] + fieldset.uuss[time + dt, lon3, lat3, particle.depth]
-    v4 = fieldset.V[time + dt, lon3, lat3, particle.depth] + fieldset.vuss[time + dt, lon3, lat3, particle.depth]
-
-    particle.lon += (u1 + 2 * u2 + 2 * u3 + u4) / 6. * dt
-    particle.lat += (v1 + 2 * v2 + 2 * v3 + v4) / 6. * dt
 
 
 def BoundaryVels(particle, fieldset, time, dt):
@@ -73,23 +48,20 @@ def OutOfBounds(particle, fieldset, time, dt):
 
 def run_hycom_particles(lons, lats, locs, rundays, files, stokesfiles):
     print(locs)
-    fset = set_hycom_grid(files)
-    uuss, vuss = set_ww3_grid(stokesfiles, fset)
-    fset.add_field(uuss)
-    fset.add_field(vuss)
+    fset = set_fields(files, stokesfiles)
 
-    size2D = (fset.U.grid.ydim, fset.U.grid.xdim)
-    fset.add_field(Field('Kh_zonal', data=10*np.ones(size2D), lon=fset.U.grid.lon, lat=fset.U.grid.lat, mesh='spherical', allow_time_extrapolation=True))
-    fset.add_field(Field('Kh_meridional', data=10*np.ones(size2D), lon=fset.U.grid.lon, lat=fset.U.grid.lat, mesh='spherical', allow_time_extrapolation=True))
+    size2D = (fset.U[0].grid.ydim, fset.U[0].grid.xdim)
+    fset.add_field(Field('Kh_zonal', data=10*np.ones(size2D), lon=fset.U[0].grid.lon, lat=fset.U[0].grid.lat, mesh='spherical', allow_time_extrapolation=True))
+    fset.add_field(Field('Kh_meridional', data=10*np.ones(size2D), lon=fset.U[0].grid.lon, lat=fset.U[0].grid.lat, mesh='spherical', allow_time_extrapolation=True))
 
     nperloc = 100
     pset = ParticleSet.from_list(fieldset=fset, pclass=JITParticle, lon=np.tile(lons, [nperloc]),
-                                 lat=np.tile(lats, [nperloc]))
+                                 lat=np.tile(lats, [nperloc]), time=np.tile(fset.U[0].time[-1], [nperloc]))
 
-    ofile = pset.ParticleFile(name='antarcticplastic_wstokes_5yr_%02d.nc' % locs[0], outputdt=delta(days=1))
+    ofile = pset.ParticleFile(name='antarcticplastic_wstokes_7yr_%02d.nc' % locs[0], outputdt=delta(days=1))
 
     kernels = pset.Kernel(AdvectionRK4) + BrownianMotion2D + BoundaryVels + WrapLon
-    pset.execute(kernels, runtime=delta(days=rundays), dt=-delta(minutes=5),
+    pset.execute(kernels, runtime=delta(days=rundays), dt=-delta(hours=1),
                  output_file=ofile, recovery={ErrorCode.ErrorOutOfBounds: OutOfBounds})
 
 
@@ -112,9 +84,9 @@ if __name__ == "__main__":
     ddir = '/Volumes/data01/HYCOMdata/GLBa0.08_expt90_surf/hycom_GLBu0.08_912_'
     # ddir = '/Users/erik/Desktop/HycomAntarctic/hycom_GLBu0.08_912_'
 
-    stokesfiles=sorted(glob('/Volumes/data01/WaveWatch3data/WW3*'))
+    stokesfiles=sorted(glob('/Volumes/data01/WaveWatch3data/WW3-GLOB-30M_201*'))
     allfiles = sorted(glob(ddir + "201*00_t000.nc"))
-    rundays = 365 * 5
+    rundays = 365 * 7
 
     for i in to_run:
         ifiles = [j for j, s in enumerate(allfiles) if "201702%02d" % days[i] in s]
