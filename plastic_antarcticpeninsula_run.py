@@ -1,6 +1,6 @@
-from parcels import FieldSet, Field, ParticleSet, JITParticle, ErrorCode, AdvectionRK4, BrownianMotion2D
+from parcels import FieldSet, Field, ParticleSet, JITParticle, ErrorCode, AdvectionRK4, BrownianMotion2D, Variable
+import datetime
 from datetime import timedelta as delta
-from argparse import ArgumentParser
 from glob import glob
 import numpy as np
 
@@ -46,49 +46,40 @@ def OutOfBounds(particle, fieldset, time, dt):
     particle.delete()
 
 
-def run_hycom_particles(lons, lats, locs, rundays, files, stokesfiles):
-    print(locs)
-    fset = set_fields(files, stokesfiles)
+ddir = '/Volumes/data01/HYCOMdata/GLBa0.08_expt90_surf/hycom_GLBu0.08_912_'
+# ddir = '/Users/erik/Desktop/HycomAntarctic/hycom_GLBu0.08_912_'
 
-    size2D = (fset.U[0].grid.ydim, fset.U[0].grid.xdim)
-    fset.add_field(Field('Kh_zonal', data=10*np.ones(size2D), lon=fset.U[0].grid.lon, lat=fset.U[0].grid.lat, mesh='spherical', allow_time_extrapolation=True))
-    fset.add_field(Field('Kh_meridional', data=10*np.ones(size2D), lon=fset.U[0].grid.lon, lat=fset.U[0].grid.lat, mesh='spherical', allow_time_extrapolation=True))
+datestr = '201*'
+stokesfiles = sorted(glob('/Volumes/data01/WaveWatch3data/WW3-GLOB-30M_%s' % datestr))
+allfiles = sorted(glob(ddir + datestr + '00_t000.nc'))
+rundays = 365 * 7
 
-    nperloc = 100
-    pset = ParticleSet.from_list(fieldset=fset, pclass=JITParticle, lon=np.tile(lons, [nperloc]),
-                                 lat=np.tile(lats, [nperloc]), time=np.tile(fset.U[0].time[-1], [nperloc]))
+fset = set_fields(allfiles, stokesfiles)
 
-    ofile = pset.ParticleFile(name='antarcticplastic_wstokes_7yr_%02d.nc' % locs[0], outputdt=delta(days=1))
+size2D = (fset.U[0].grid.ydim, fset.U[0].grid.xdim)
+fset.add_field(Field('Kh_zonal', data=10*np.ones(size2D), lon=fset.U[0].grid.lon, lat=fset.U[0].grid.lat, mesh='spherical', allow_time_extrapolation=True))
+fset.add_field(Field('Kh_meridional', data=10*np.ones(size2D), lon=fset.U[0].grid.lon, lat=fset.U[0].grid.lat, mesh='spherical', allow_time_extrapolation=True))
 
-    kernels = pset.Kernel(AdvectionRK4) + BrownianMotion2D + BoundaryVels + WrapLon
-    pset.execute(kernels, runtime=delta(days=rundays), dt=-delta(hours=1),
-                 output_file=ofile, recovery={ErrorCode.ErrorOutOfBounds: OutOfBounds})
+lats = [-64.989, -64.619, -64.767, -64.528, -63.907, -63.395, -63.156, -63.452, -62.636, -62.298, -61.417, -62.249]
+lons = [-63.383, -63.172, -62.658, -64.329, -64.138, -61.633, -60.631, -59.440, -58.998, -57.524, -55.251, -57.036]
+lons = [l + 360 for l in lons]
+locs = [9, 8, 7, 10, 11, 12, 6, 5, 4, 3, 1, 2]
+days = [14, 16, 16, 18, 18, 19, 19, 19, 21, 23, 25, 26]  # all in Feb 2017
+
+dates = [datetime.datetime(2017, 2, d) for d in days]
+nperloc = 100
 
 
-if __name__ == "__main__":
-    p = ArgumentParser()
-    p.add_argument('-l', '--loc', type=int, default=0)
-    args = p.parse_args()
+class AntarcticParticle(JITParticle):
+    loc = Variable('loc', dtype=np.float32, initial=0.)
 
-    lats = [-64.989, -64.619, -64.767, -64.528, -63.907, -63.395, -63.156, -63.452, -62.636, -62.298, -61.417, -62.249]
-    lons = [-63.383, -63.172, -62.658, -64.329, -64.138, -61.633, -60.631, -59.440, -58.998, -57.524, -55.251, -57.036]
-    lons = [l + 360 for l in lons]
-    locs = [      9,       8,       7,      10,      11,      12,       6,       5,       4,       3,       1,       2]
-    days = [     14,      16,      16,      18,      18,      19,      19,      19,      21,      23,      25,      26]  # all in Feb 2017
 
-    if args.loc > 0:
-        to_run = [i for i, lc in enumerate(locs) if lc == args.loc]
-    else:
-        to_run = range(0, 12)
+pset = ParticleSet(fieldset=fset, pclass=AntarcticParticle, lon=np.repeat(lons, [nperloc]),
+                   lat=np.repeat(lats, [nperloc]), time=np.repeat(dates, [nperloc]),
+                   loc=np.repeat(locs, [nperloc]))
 
-    ddir = '/Volumes/data01/HYCOMdata/GLBa0.08_expt90_surf/hycom_GLBu0.08_912_'
-    # ddir = '/Users/erik/Desktop/HycomAntarctic/hycom_GLBu0.08_912_'
+ofile = pset.ParticleFile(name='antarcticplastic_wstokes_7yr.nc', outputdt=delta(days=1))
 
-    stokesfiles=sorted(glob('/Volumes/data01/WaveWatch3data/WW3-GLOB-30M_201*'))
-    allfiles = sorted(glob(ddir + "201*00_t000.nc"))
-    rundays = 365 * 7
-
-    for i in to_run:
-        ifiles = [j for j, s in enumerate(allfiles) if "201702%02d" % days[i] in s]
-        files = allfiles[ifiles[0] - rundays - 5:ifiles[0]]
-        run_hycom_particles([lons[i]], [lats[i]], [locs[i]], rundays, files, stokesfiles)
+kernels = pset.Kernel(AdvectionRK4) + BrownianMotion2D + BoundaryVels + WrapLon
+pset.execute(kernels, runtime=delta(days=rundays), dt=-delta(hours=1),
+             output_file=ofile, recovery={ErrorCode.ErrorOutOfBounds: OutOfBounds})
