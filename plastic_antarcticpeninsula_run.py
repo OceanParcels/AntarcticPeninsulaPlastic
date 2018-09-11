@@ -18,7 +18,7 @@ def set_fields(hycomfiles, stokesfiles):
     uuss = Field.from_netcdf(stokesfiles, 'uuss', dimensions, fieldtype='U')
     vuss = Field.from_netcdf(stokesfiles, 'vuss', dimensions, fieldtype='V', grid=uuss.grid, timeFiles=uuss.timeFiles)
 
-    fieldset = FieldSet(U=[uhycom, uuss], V=[vhycom, vuss])
+    fieldset = FieldSet(U=uhycom+uuss, V=vhycom+vuss)
     fieldset.add_field(MaskUvel)
     fieldset.add_field(MaskVvel)
     fieldset.MaskUvel.units = fieldset.U[0].units
